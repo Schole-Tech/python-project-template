@@ -18,12 +18,12 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Ruff check
-        uses: astral-sh/ruff-action@0a44087a42e14e1a6b5bc40e0a9498a0e2121477 # v3.0.1
+        uses: astral-sh/ruff-action@4919ec5cf1f49eff0871dbcea0da843445b837e6 # v3
         with:
           args: "check --output-format=github"
 
       - name: Ruff format check
-        uses: astral-sh/ruff-action@0a44087a42e14e1a6b5bc40e0a9498a0e2121477 # v3.0.1
+        uses: astral-sh/ruff-action@4919ec5cf1f49eff0871dbcea0da843445b837e6 # v3
         with:
           args: "format --check"
 
