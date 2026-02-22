@@ -1,0 +1,81 @@
+name: Deploy Cloud Run Service
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "deploy/Dockerfile"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  # TODO: Set these values for your project
+  REGION: asia-northeast1
+  PROJECT: your-gcp-project-id
+  SERVICE_NAME: your-service-name
+  IMAGE: asia-northeast1-docker.pkg.dev/your-gcp-project-id/your-repo/your-image
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198e19c816612b # v6.18.0
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@e62f655d5754bec48078a72edc015367b01ee97b # v2.14.0
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          image: ${{ env.IMAGE }}:sha-${{ github.sha }}
+          region: ${{ env.REGION }}
+          project_id: ${{ env.PROJECT }}
+
+      - name: Health check
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.REGION }} \
+            --project ${{ env.PROJECT }} \
+            --format 'value(status.url)')
+          sleep 10
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${SERVICE_URL}/health")
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed with status $STATUS"
+            exit 1
+          fi
+          echo "Health check passed: ${SERVICE_URL}/health"
